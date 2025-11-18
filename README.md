@@ -1,26 +1,33 @@
-# 서울시의회 회의록 시민 서비스
+# SeoulLog - 서울시의회 안건 검색 서비스
 
-시민이 쉽게 이해할 수 있는 서울시의회 회의록 서비스 프로토타입
+서울시의회 회의록을 시민이 쉽게 검색하고 이해할 수 있는 AI 기반 검색 서비스
 
 ---
 
 ## 📋 프로젝트 개요
 
-**목적**: 복잡한 서울시의회 회의록을 2030 세대가 쉽게 이해하고 접근할 수 있도록 개선
+**목적**: 복잡한 서울시의회 회의록을 AI 요약과 시맨틱 검색으로 누구나 쉽게 접근 가능하도록 개선
 
-**핵심 전략**: 회의록 중심 → **이슈 중심**으로 전환
-- 기존: "제332회 운영위원회 회의록"
-- 개선: "지하철 요금 150원 인상 확정" 같은 실제 이슈
+**핵심 전략**:
+- **안건 단위 검색**: 같은 안건의 여러 발언을 하나로 그룹핑하여 중복 제거
+- **하이브리드 검색**: ChromaDB(벡터 검색) + SQLite(메타데이터) 조합
+- **AI 요약**: LLM을 활용한 자동 요약 및 핵심 의제 추출
 
 ---
 
-## 🎯 핵심 기능 (2주 MVP)
+## 🎯 핵심 기능
 
-1. **3줄 요약** - 긴 회의록을 3줄로 요약
-2. **쉬운 말 설명** - 어려운 용어를 쉽게 풀어서 설명
-3. **RAG 챗봇** - 궁금한 점을 바로 질문 가능
-4. **키워드 검색** - 관련도 순으로 정확한 검색
-5. **시각적 타임라인** - 안건의 진행 과정 시각화
+### ✅ 구현 완료
+1. **안건 단위 검색** - 벡터 유사도 기반 시맨틱 검색
+2. **안건 상세 페이지** - 발언자별 입장, 전체 텍스트 제공
+3. **반응형 UI** - 모바일/데스크톱 대응 (Tailwind CSS)
+
+### 🔄 구현 예정
+1. **AI 요약** - LLM으로 안건 자동 요약
+2. **핵심 의제 추출** - 찬반 입장 자동 분석
+3. **쉬운 용어 설명** - 어려운 법률 용어 자동 해설
+4. **관련 안건 추천** - 유사한 안건 자동 추천
+5. **RAG 챗봇** - 안건 관련 질의응답
 
 ---
 
@@ -28,313 +35,359 @@
 
 ```
 seoulloc/
-├── frontend/                    # Next.js 16 프론트엔드
-│   ├── app/
-│   │   ├── page.tsx            # 메인 페이지 (이슈 목록)
-│   │   ├── issue/[id]/page.tsx # 이슈 상세 페이지
-│   │   └── comparison/page.tsx # Before/After 비교 페이지
-│   ├── components/
-│   │   ├── IssueCard.tsx       # 이슈 카드 컴포넌트
-│   │   └── ChatBot.tsx         # 플로팅 챗봇
-│   └── data/
-│       ├── mockData.ts         # Mock 데이터 (초기 개발용)
-│       └── realData.ts         # 실제 크롤링 데이터 ✅
+├── html/                           # 프론트엔드 (반응형 HTML)
+│   ├── main.html                  # 메인 검색 페이지
+│   ├── search.html                # 검색 결과 페이지
+│   └── details.html               # 안건 상세 페이지
 │
-├── result/                      # 크롤링된 회의록 저장 폴더
-│   ├── 제332회 본회의 제1차/
-│   ├── 제332회 운영위원회 제1차/
-│   └── ...                     # 총 9개 회의록
+├── backend_server.py              # FastAPI 메인 서버
 │
-├── crawl_final.py              # 단일 회의록 크롤링 스크립트
-├── crawl_all_urls.py           # 여러 URL 일괄 크롤링
-├── parse_real_data.py          # 크롤링 데이터 → UI 데이터 변환 ✅
+├── 검색 파이프라인/
+│   ├── query_analyzer.py          # LLM 기반 쿼리 분석
+│   ├── simple_query_analyzer.py   # 규칙 기반 쿼리 분석
+│   ├── metadata_validator.py      # 발언자명 보정
+│   ├── search_executor.py         # ChromaDB 검색 실행
+│   ├── result_formatter.py        # 결과 포맷팅
+│   └── answer_generator_simple.py # 간단 답변 생성
 │
-├── extract_session_332_links.py # Selenium으로 링크 추출 (시도)
-├── extract_links_browser.js     # 브라우저 콘솔에서 링크 추출 ✅
+├── 데이터베이스 구축/
+│   ├── insert_to_chromadb.py      # 청크별 벡터 DB 생성
+│   ├── create_agenda_database.py  # 안건별 SQLite DB 생성
+│   ├── custom_openai_embedding.py # OpenAI 임베딩 함수
+│   └── delete_chromadb_collection.py # ChromaDB 초기화
 │
-└── URL.md                       # 크롤링할 회의록 URL 목록
+├── 데이터 처리/
+│   ├── process_all_txt_to_json_async_gemini.py # 회의록 JSON 변환
+│   ├── parse_session_332.py       # 332회 회의록 파싱
+│   └── result_txt/                # 처리된 JSON 데이터
+│
+├── 데이터베이스/
+│   ├── chroma_db/                 # ChromaDB 벡터 저장소
+│   └── sqlite_DB/
+│       └── agendas.db            # 안건 메타데이터 SQLite DB
+│
+├── HANDOVER.md                    # 작업 인수인계 문서
+├── proposal.md                    # 해커톤 제안서
+└── requirements_backend.txt       # Python 패키지 목록
 ```
 
 ---
 
 ## 🚀 실행 방법
 
-### 1. 프론트엔드 실행
+### 1. 환경 설정
 
 ```bash
-cd frontend
-npm install
-npm run dev
+# Python 가상환경 생성 (conda 권장)
+conda create -n seoul python=3.10
+conda activate seoul
+
+# 패키지 설치
+pip install -r requirements_backend.txt
 ```
 
-→ http://localhost:3000 에서 확인
+### 2. 환경 변수 설정
 
-### 2. 회의록 크롤링
-
-#### 방법 A: URL.md에 있는 URL들 크롤링
-```bash
-python crawl_all_urls.py
+`.env` 파일 생성:
+```
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-#### 방법 B: 제332회 전체 회의록 링크 추출 (브라우저 콘솔 사용)
-
-1. https://ms.smc.seoul.kr/kr/assembly/session.do 열기
-2. **F12** → Console 탭
-3. `allow pasting` 입력
-4. `extract_links_browser.js` 파일 내용 붙여넣기
-5. Enter → 자동으로 URL 추출 및 클립보드 복사
-6. `URL.md`에 붙여넣기
-
-### 3. 크롤링 데이터 파싱 (UI용 데이터 생성)
+### 3. 데이터베이스 구축
 
 ```bash
-python parse_real_data.py
+# Step 1: ChromaDB 청크 컬렉션 생성 (벡터 검색용)
+python insert_to_chromadb.py
+
+# Step 2: SQLite 안건 DB 생성 (메타데이터용)
+python create_agenda_database.py
 ```
 
-→ `frontend/data/realData.ts` 파일 생성됨
+### 4. 서버 실행
+
+```bash
+python backend_server.py
+```
+
+→ http://localhost:8000 에서 확인
+
+**모바일 접속**: 같은 WiFi에서 `http://{your-ip}:8000`
 
 ---
 
-## 📊 현재 상태
+## 🏗️ 시스템 아키텍처
 
-### ✅ 완료된 작업
+### 검색 흐름
+```
+사용자 쿼리 입력
+    ↓
+ChromaDB 청크 검색 (벡터 유사도)
+    ↓
+안건별 그룹핑 (agenda_id 기준, 최고 유사도만 선택)
+    ↓
+SQLite에서 안건 상세 정보 조회
+    ↓
+안건 단위로 검색 결과 반환
+```
 
-1. **프론트엔드 UI 구현**
-   - 이슈 중심 메인 페이지
-   - 이슈 상세 페이지 (3줄 요약, 쉬운 설명, 타임라인)
-   - Before/After 비교 페이지
-   - 플로팅 챗봇 UI (Mock)
+### 데이터 구조
 
-2. **데이터 크롤링**
-   - 9개 회의록 크롤링 완료
-   - JSON, Markdown, TXT 형식으로 저장
+**ChromaDB**: `seoul_council_meetings` 컬렉션
+- 청크별로 저장 (세밀한 벡터 검색)
+- 메타데이터: `agenda_id`, `speaker`, `meeting_title` 등
 
-3. **데이터 파싱**
-   - 636개 안건을 이슈로 변환
-   - 프론트엔드에서 실제 데이터 표시 중
+**SQLite**: `agendas.db`
+- 안건별로 저장 (빠른 메타데이터 조회)
+- 테이블:
+  - `agendas`: 안건 상세 정보 (제목, 발언자, 전체 텍스트, 상태)
+  - `agenda_chunks`: 안건-청크 매핑
 
-### 🔄 진행 중
+---
 
-1. **제332회 전체 회의록 링크 추출**
-   - Selenium 방식: 트리 구조 문제로 실패
-   - 브라우저 콘솔 방식: 스크립트 작성 완료, 테스트 필요
+## 📊 API 엔드포인트
 
-### 📝 향후 작업
+### 검색 API
+```http
+POST /api/search
+Content-Type: application/json
 
-1. **RAG 챗봇 구현**
-   - VectorDB (ChromaDB) 설정
-   - 임베딩 생성
-   - LLM 연동
+{
+  "query": "AI 정책",
+  "n_results": 5
+}
+```
 
-2. **검색 기능 개선**
-   - 시맨틱 서치 구현
-   - 관련도 순 정렬
+**응답**:
+```json
+{
+  "query": "AI 정책",
+  "total_results": 3,
+  "results": [
+    {
+      "agenda_id": "meeting_20251117_195534_agenda_001",
+      "title": "서울특별시 인공지능산업 육성 및 지원 조례안",
+      "ai_summary": "...",
+      "main_speaker": "경제실장 주용태",
+      "similarity": 0.85,
+      ...
+    }
+  ]
+}
+```
 
-3. **데이터 필터링**
-   - 636개 안건 → 시민 관심사 기준으로 선별
-   - 지역별 필터링 정확도 향상
+### 안건 상세 API
+```http
+GET /api/agenda/{agenda_id}
+```
 
-4. **요약 및 설명 자동화**
-   - 현재: 하드코딩
-   - 목표: LLM으로 자동 생성
+### 핫이슈 API
+```http
+GET /api/hot-issues
+```
 
 ---
 
 ## 🛠️ 기술 스택
 
+### Backend
+- **Framework**: FastAPI
+- **Vector DB**: ChromaDB (코사인 유사도)
+- **Relational DB**: SQLite
+- **Embedding**: OpenAI `text-embedding-3-small`
+- **LLM**: OpenAI GPT-4o-mini (쿼리 분석용)
+
 ### Frontend
-- **Framework**: Next.js 16 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Build Tool**: Turbopack
+- **Framework**: Vanilla HTML/CSS/JavaScript
+- **Styling**: Tailwind CSS (CDN)
+- **Icons**: Material Symbols
 
-### Backend (예정)
-- **Language**: Python
-- **Vector DB**: ChromaDB
-- **Embedding**: sentence-transformers
-- **LLM**: OpenAI API / Claude API
-
-### Crawling
-- **Library**: BeautifulSoup4, Requests
-- **Automation**: Selenium (부분 사용)
+### Data Processing
+- **LLM**: Google Gemini (회의록 JSON 변환)
+- **Parsing**: Python (BeautifulSoup4, json)
 
 ---
 
 ## 📂 주요 파일 설명
 
-### 프론트엔드
+### Backend
 
-#### `frontend/app/page.tsx`
+#### `backend_server.py`
+- FastAPI 메인 서버
+- `/api/search`: 안건 검색 (ChromaDB → 그룹핑 → SQLite)
+- `/api/agenda/{agenda_id}`: 안건 상세 조회
+- 현재는 파이프라인 모듈을 우회하고 직접 ChromaDB/SQLite 호출
+
+#### `insert_to_chromadb.py`
+- JSON 회의록을 ChromaDB에 청크별로 삽입
+- 각 청크에 `agenda_id` 메타데이터 추가
+- OpenAI 임베딩 사용
+
+#### `create_agenda_database.py`
+- JSON 회의록을 안건별로 그룹핑하여 SQLite에 저장
+- `agendas` 테이블: 안건 상세 정보
+- `agenda_chunks` 테이블: 안건-청크 매핑
+
+### Frontend
+
+#### `html/main.html`
 - 메인 페이지
-- 실제 크롤링된 636개 이슈 중 20개 표시
-- 지역 필터링 기능
+- 검색 입력창, 태그 검색, 핫이슈 top 5
 
-#### `frontend/app/issue/[id]/page.tsx`
-- 이슈 상세 페이지
-- 3줄 요약, 쉬운 설명, 타임라인, 첨부자료, 원문 보기
+#### `html/search.html`
+- 검색 결과 페이지
+- 안건 카드 (제목, AI 요약, 발언자, 유사도, 진행 상태)
 
-#### `frontend/data/realData.ts`
-- `parse_real_data.py`로 자동 생성됨
-- 636개 실제 이슈 데이터
-
-### 크롤링 & 파싱
-
-#### `crawl_final.py`
-- 단일 회의록 URL 크롤링
-- JSON, Markdown, TXT 생성
-
-#### `crawl_all_urls.py`
-- `URL.md`의 여러 URL 일괄 크롤링
-- 서버 부하 방지 (2초 간격)
-
-#### `parse_real_data.py`
-- `result/` 폴더의 JSON 파일들을 읽어서
-- 프론트엔드용 데이터로 변환
-- **각 안건 = 1개 이슈**로 변환
-
-**파싱 로직:**
-1. 회의록에서 "의사일정" 섹션 추출
-2. 번호로 구분된 안건들 파싱 (1., 2., 3., ...)
-3. 각 안건마다 이슈 객체 생성
-4. 메타데이터, 요약, 타임라인 자동 생성 (규칙 기반)
-
-#### `extract_links_browser.js`
-- 브라우저 콘솔에서 실행
-- 제332회 임시회 전체 회의록 링크 자동 추출
-- **3단계 트리 구조** 자동 펼침:
-  1. 제11대
-  2. 제332회
-  3. 본회의, 운영위원회, 각 위원회...
-  4. 각 위원회의 회차별 링크
+#### `html/details.html`
+- 안건 상세 페이지
+- 핵심 의제, 쉬운 용어 설명, 관련 의안 (현재 하드코딩)
 
 ---
 
-## 🎨 UI 디자인 특징
+## 📊 현재 데이터
 
-### 메인 페이지
-- **이슈 카드 형식**: 이모지 + 제목 + 상태 + 영향
-- **지역 필터**: 내 지역 관련 이슈만 보기
-- **서비스 소개**: 3줄 요약, 쉬운 말, 챗봇, 타임라인 강조
-
-### 이슈 상세 페이지
-- **3줄 요약**: 파란색 박스
-- **쉬운 설명**: 노란색 강조 박스
-- **타임라인**: 세로선 + 컬러 도트 (제안/심의/통과)
-- **첨부 자료**: PDF 다운로드 링크
-- **원문 보기**: 접었다 펼 수 있는 details 태그
-
-### 비교 페이지
-- **Before/After 비교**: 기존 SMC 사이트 vs 개선안
-- **사용자 시나리오**: 직장인, 주부, 청년 관점
-- **기대 효과**: 10배 체류시간, 6배 재방문율, 7배 참여율
+- **회의록 수**: 2개 JSON 파일
+- **총 청크**: 169개
+- **안건 수**: 약 10개
+- **회의**: 제332회 AI경쟁력강화특별위원회
 
 ---
 
-## 🔧 알려진 문제 및 해결 방법
+## 🚨 알려진 이슈 & 향후 작업
 
-### 1. lightningcss 에러 (Windows)
+### 구현 필요 (하드코딩 → 자동화)
+
+1. **AI 요약** (우선순위: 높음)
+   - 현재: 텍스트 앞 200자만 자르기
+   - 목표: LLM으로 실제 요약 생성
+
+2. **핵심 의제 추출** (우선순위: 높음)
+   - 현재: 발언자별로 텍스트만 나열
+   - 목표: LLM으로 쟁점 추출 및 찬반 입장 분석
+
+3. **쉬운 용어 설명** (우선순위: 중간)
+   - 현재: 하드코딩된 정적 텍스트
+   - 목표: LLM으로 어려운 용어 자동 추출 및 설명
+
+4. **관련 의안 추천** (우선순위: 중간)
+   - 현재: 하드코딩된 정적 HTML
+   - 목표: ChromaDB 유사도 검색으로 자동 추천
+
+5. **핫이슈 top 5** (우선순위: 낮음)
+   - 현재: 하드코딩된 데이터
+   - 목표: SQLite에서 실제 안건 조회 또는 랜덤 표시
+
+6. **의안 진행과정** (우선순위: 낮음)
+   - 현재: 진행 상태가 "심사중"만 있음
+   - 목표: 실제 단계별 진행 데이터 (발의 → 위원회 → 본회의 → 공포)
+
+### 사용되지 않는 모듈
+
+현재 초기화만 되고 실제 사용되지 않는 파이프라인:
+- `QueryAnalyzer` (LLM 쿼리 분석)
+- `MetadataValidator` (발언자명 보정)
+- `SearchExecutor` (ChromaDB 검색)
+- `ResultFormatter` (결과 포맷팅)
+
+→ 향후 RAG 챗봇 구현 시 활용 가능
+
+---
+
+## 🔧 개발 팁
+
+### ChromaDB 재구축
 ```bash
-rmdir /s /q node_modules
-del package-lock.json
-npm install
+# 1. 기존 ChromaDB 삭제
+rm -rf chroma_db/
+
+# 2. 재구축
+python insert_to_chromadb.py
 ```
 
-### 2. Next.js 개발 서버 충돌
-- 에러: "Unable to acquire lock"
-- 원인: 다른 개발 서버가 실행 중
-- 해결: 기존 프로세스 종료 후 재실행
+### SQLite DB 확인
+```bash
+# DB 상태 확인 스크립트
+python check_db.py
+```
 
-### 3. Selenium 링크 추출 실패
-- 원인: Fancytree의 동적 로딩
-- 해결: 브라우저 콘솔 JavaScript 방식 사용
-
-### 4. 이슈가 636개로 너무 많음
-- 원인: 모든 안건을 이슈로 변환
-- 해결 필요: 중요한 이슈만 필터링 (키워드 기반 또는 LLM 판단)
-
-### 5. 지역 필터가 작동 안 함
-- 원인: 대부분 안건이 "전체"로 분류됨
-- 해결 필요: 더 정교한 지역 판단 로직
+### 유사도 공식
+현재 사용: `similarity = 1 - (distance / 2)`
+- ChromaDB 코사인 거리: 0~2 범위
+- 유사도: 0~1 범위 (1에 가까울수록 유사)
 
 ---
 
 ## 📝 데이터 흐름
 
 ```
-서울시의회 사이트
+서울시의회 회의록 (텍스트)
     ↓
-[크롤링] crawl_all_urls.py
+[Gemini 처리] process_all_txt_to_json_async_gemini.py
     ↓
-result/*.json (9개 회의록)
+result_txt/*.json (구조화된 회의록)
     ↓
-[파싱] parse_real_data.py
+[ChromaDB 구축] insert_to_chromadb.py
     ↓
-frontend/data/realData.ts (636개 이슈)
+chroma_db/ (벡터 검색용)
     ↓
-[프론트엔드] Next.js
+[SQLite 구축] create_agenda_database.py
     ↓
-http://localhost:3000 (사용자)
+sqlite_DB/agendas.db (메타데이터용)
+    ↓
+[FastAPI 서버] backend_server.py
+    ↓
+HTML 프론트엔드 → 사용자
 ```
 
 ---
 
 ## 🎯 다음 단계 (우선순위)
 
-### 우선순위 1: 데이터 품질 개선
-- [ ] 636개 이슈 → 중요 이슈만 선별
-- [ ] LLM으로 3줄 요약 자동 생성
-- [ ] 쉬운 설명 자동 생성
+### Phase 1: AI 기능 구현 (1-2일)
+- [ ] AI 요약 생성 (LLM)
+- [ ] 핵심 의제 추출 (LLM)
+- [ ] 쉬운 용어 설명 (LLM)
 
-### 우선순위 2: RAG 챗봇 구현
-- [ ] ChromaDB 설정
-- [ ] 회의록 임베딩 생성
-- [ ] LLM API 연동
-- [ ] 챗봇 UI → 실제 API 연결
+### Phase 2: 추천 시스템 (1일)
+- [ ] 관련 의안 추천 (ChromaDB 유사도 검색)
+- [ ] 핫이슈 실제 데이터 연결
 
-### 우선순위 3: 검색 기능
-- [ ] 시맨틱 서치 구현
-- [ ] 검색 결과 페이지 (`/search`) 생성
-- [ ] 관련도 순 정렬
+### Phase 3: RAG 챗봇 (2-3일)
+- [ ] Langgraph 워크플로 구현
+- [ ] 대화 히스토리 관리
+- [ ] 챗봇 UI 연결
 
-### 우선순위 4: 추가 기능
-- [ ] 지역 필터 정확도 개선
-- [ ] 카테고리 분류 (예산/조례/인사 등)
-- [ ] 북마크 기능
-- [ ] 공유 기능
+### Phase 4: 데이터 확장
+- [ ] 더 많은 회의록 수집
+- [ ] 의안 진행 상태 데이터 확보
+- [ ] 카테고리 분류 (예산/조례/인사)
 
 ---
 
-## 📌 참고 링크
+## 📌 참고 문서
 
-- **원본 사이트**: https://ms.smc.seoul.kr/kr/assembly/session.do
-- **회의록 목록**: https://ms.smc.seoul.kr/kr/assembly/session.do
-- **프로젝트 계획**: `project_plan.md` 참고
+- **작업 인수인계**: `HANDOVER.md`
+- **해커톤 제안서**: `proposal.md`
+- **원본 사이트**: https://ms.smc.seoul.kr
 
 ---
 
 ## 💡 핵심 인사이트
 
-### 문제 정의
-- 2030 세대는 "제332회 운영위원회"에 관심 없음
-- 68페이지 회의록은 읽지 않음
-- 검색해도 원하는 정보를 못 찾음
+### 설계 철학
+1. **검색 정확도**: 청크 단위 벡터 검색 (세밀한 매칭)
+2. **UI 표시**: 안건 단위로 그룹핑 (중복 제거, 깔끔한 UX)
+3. **하이브리드 구조**: ChromaDB(검색) + SQLite(메타데이터)
 
-### 해결 방법
-- **이슈 중심 접근**: "지하철 요금 인상", "청년 지원금" 같은 구체적 이슈
-- **정보 계층화**: 3줄 요약 → 상세 → 전문
-- **대화형 인터페이스**: 챗봇으로 질문 가능
-- **시각화**: 복잡한 과정을 타임라인으로
-
-### 기대 효과
-- 페이지 체류시간: 30초 → 3분 (10배 ↑)
-- 재방문율: 5% → 30% (6배 ↑)
-- 시민 참여율: 0.3% → 2% (7배 ↑)
+### 기술적 선택
+- **Langgraph 미사용**: 현재 기능들은 단순 LLM 호출로 충분
+- **파이프라인 우회**: 초기 구상과 달리 직접 DB 호출로 단순화
+- **비동기 처리**: asyncio로 병렬 LLM 호출 가능
 
 ---
 
 ## 👥 기여 방법
 
-1. 이슈 등록
+1. Issue 등록
 2. Pull Request
 3. 피드백 제공
 
@@ -346,5 +399,5 @@ MIT License
 
 ---
 
-**Last Updated**: 2025-11-17
-**Status**: 프로토타입 개발 중 (2주차)
+**Last Updated**: 2025-11-18
+**Status**: 안건 검색 기능 구현 완료, AI 요약 기능 구현 예정
