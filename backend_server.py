@@ -24,15 +24,15 @@ import sqlite3
 import chromadb
 import os
 from dotenv import load_dotenv
-from custom_openai_embedding import CustomOpenAIEmbeddingFunction
+from utils.custom_openai_embedding import CustomOpenAIEmbeddingFunction
 
 # 파이프라인 모듈 import
-from query_analyzer import QueryAnalyzer
-from simple_query_analyzer import SimpleQueryAnalyzer
-from metadata_validator import MetadataValidator
-from search_executor import SearchExecutor
-from result_formatter import ResultFormatter
-from answer_generator_simple import SimpleAnswerGenerator
+from search.query_analyzer import QueryAnalyzer
+from search.simple_query_analyzer import SimpleQueryAnalyzer
+from search.metadata_validator import MetadataValidator
+from search.search_executor import SearchExecutor
+from search.result_formatter import ResultFormatter
+from search.answer_generator_simple import SimpleAnswerGenerator
 
 load_dotenv()
 
@@ -40,7 +40,7 @@ load_dotenv()
 app = FastAPI(title="SeoulLog API")
 
 # HTML 파일 경로
-HTML_DIR = Path("html")
+HTML_DIR = Path("frontend")
 
 
 class SearchRequest(BaseModel):
@@ -54,6 +54,7 @@ class SearchResult(BaseModel):
     agenda_id: str
     title: str
     ai_summary: str
+    key_issues: Optional[List[str]] = None
     main_speaker: str
     all_speakers: str
     speaker_count: int
@@ -89,13 +90,14 @@ except Exception as e:
     print("   → SimpleQueryAnalyzer (규칙 기반) 사용")
     analyzer = SimpleQueryAnalyzer()
 
-validator = MetadataValidator()
-searcher = SearchExecutor()
-formatter = ResultFormatter()
-answer_generator = SimpleAnswerGenerator()
+# 파이프라인 모듈들 (현재 미사용 - backend_server에서 직접 ChromaDB/SQLite 조회)
+# validator = MetadataValidator()
+# searcher = SearchExecutor()
+# formatter = ResultFormatter()
+# answer_generator = SimpleAnswerGenerator()
 
 # ChromaDB 클라이언트 초기화 (안건 검색용)
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
+chroma_client = chromadb.PersistentClient(path="./data/chroma_db")
 openai_ef = CustomOpenAIEmbeddingFunction(
     api_key=os.getenv("OPENAI_API_KEY"),
     model_name="text-embedding-3-small"
@@ -107,7 +109,7 @@ chroma_collection = chroma_client.get_collection(
 print("✅ ChromaDB 연결 성공")
 
 # SQLite DB 경로
-SQLITE_DB_PATH = "sqlite_DB/agendas.db"
+SQLITE_DB_PATH = "data/sqlite_DB/agendas.db"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -213,7 +215,7 @@ async def search(request: SearchRequest):
             cursor.execute('''
                 SELECT agenda_id, agenda_title, meeting_title, meeting_date,
                        meeting_url, main_speaker, all_speakers, speaker_count,
-                       chunk_count, combined_text, status
+                       chunk_count, combined_text, ai_summary, key_issues, status
                 FROM agendas
                 WHERE agenda_id = ?
             ''', (agenda_id,))
@@ -223,22 +225,34 @@ async def search(request: SearchRequest):
             if not row:
                 continue
 
-            # AI 요약 생성 (combined_text의 앞부분 사용)
-            combined_text = row[9] or ""
-            ai_summary = combined_text[:200].strip()
-            if len(combined_text) > 200:
-                ai_summary += "..."
+            # AI 요약 (DB에서 가져온 값, 없으면 combined_text의 앞부분 사용)
+            ai_summary = row[10] or ""
+            if not ai_summary:
+                combined_text = row[9] or ""
+                ai_summary = combined_text[:200].strip()
+                if len(combined_text) > 200:
+                    ai_summary += "..."
+
+            # 핵심 의제 파싱 (JSON 문자열 → 리스트)
+            import json
+            key_issues = None
+            if row[11]:
+                try:
+                    key_issues = json.loads(row[11])
+                except:
+                    pass
 
             formatted_results.append(SearchResult(
                 agenda_id=row[0],
                 title=row[1] or "제목 없음",
                 ai_summary=ai_summary,
+                key_issues=key_issues,
                 main_speaker=row[5] or "발언자 없음",
                 all_speakers=row[6] or "",
                 speaker_count=row[7] or 0,
                 meeting_date=row[3] or "날짜 없음",
                 meeting_title=row[2] or "",
-                status=row[10] or "심사중",
+                status=row[12] or "심사중",
                 similarity=round(similarity, 4),
                 chunk_count=row[8] or 0,
                 meeting_url=row[4] or ""
@@ -344,7 +358,7 @@ async def get_agenda_detail(agenda_id: str):
         cursor.execute('''
             SELECT agenda_id, agenda_title, meeting_title, meeting_date,
                    meeting_url, main_speaker, all_speakers, speaker_count,
-                   chunk_count, chunk_ids, combined_text, status
+                   chunk_count, chunk_ids, combined_text, ai_summary, key_issues, status
             FROM agendas
             WHERE agenda_id = ?
         ''', (agenda_id,))
@@ -366,6 +380,15 @@ async def get_agenda_detail(agenda_id: str):
         chunks = cursor.fetchall()
         conn.close()
 
+        # 핵심 의제 파싱
+        import json
+        key_issues = None
+        if row[12]:
+            try:
+                key_issues = json.loads(row[12])
+            except:
+                pass
+
         # 응답 생성
         return {
             "agenda_id": row[0],
@@ -378,7 +401,9 @@ async def get_agenda_detail(agenda_id: str):
             "speaker_count": row[7],
             "chunk_count": row[8],
             "combined_text": row[10],
-            "status": row[11],
+            "ai_summary": row[11],
+            "key_issues": key_issues,
+            "status": row[13],
             "chunks": [
                 {
                     "chunk_id": chunk[0],

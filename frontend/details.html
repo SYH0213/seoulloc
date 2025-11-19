@@ -3,7 +3,6 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>의안 상세 정보</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
@@ -12,25 +11,28 @@
         font-family: "Public Sans", "Noto Sans KR", sans-serif;
       }
     </style>
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            colors: {
-              "primary": "#00559F",
-              "background-light": "#F5F7FA",
-              "background-dark": "#101622",
-              "accent": "#FFC107"
+<script>
+      tailwind = {
+        config: {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "primary": "#00559F",
+                "background-light": "#F5F7FA",
+                "background-dark": "#101622",
+                "accent": "#FFC107"
+              },
+              fontFamily: {
+                "display": ["Public Sans", "Noto Sans KR", "sans-serif"]
+              },
+              borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
             },
-            fontFamily: {
-              "display": ["Public Sans", "Noto Sans KR", "sans-serif"]
-            },
-            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
           },
-        },
+        }
       }
     </script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <style>
     body {
       min-height: max(884px, 100dvh);
@@ -114,10 +116,23 @@
 </div>
 </div>
 </div>
-<div class="p-4 pt-8">
-<button class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-base font-bold text-white transition-colors hover:bg-primary/90">
-<span>의안 원문 전체 보기</span>
-<span class="material-symbols-outlined">arrow_forward</span>
+<div class="p-4">
+<details class="flex flex-col group">
+<summary class="flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-base font-bold text-white transition-colors hover:bg-primary/90">
+<span>회의록 전체 내용 보기</span>
+<span class="material-symbols-outlined group-open:rotate-180 transition-transform">expand_more</span>
+</summary>
+<div class="pt-4 px-4">
+<div class="bg-gray-50 dark:bg-slate-900 p-4 rounded-lg max-h-96 overflow-y-auto">
+<p id="combined-text" class="text-[#212121] dark:text-white text-sm leading-relaxed whitespace-pre-wrap">로딩 중...</p>
+</div>
+</div>
+</details>
+</div>
+<div class="p-4 pt-2">
+<button id="original-url-button" class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-primary bg-white dark:bg-slate-800 px-6 py-3 text-base font-bold text-primary transition-colors hover:bg-gray-50 dark:hover:bg-slate-700">
+<span>원본 회의 영상 보기</span>
+<span class="material-symbols-outlined">open_in_new</span>
 </button>
 </div>
 <div class="px-4 py-6">
@@ -194,45 +209,82 @@ function displayAgendaDetail(data) {
     <p class="text-[#757575] dark:text-slate-400 text-sm font-normal leading-normal">상태: ${data.status}</p>
   `;
 
-  // 핵심 의제 (combined_text 표시)
-  const issuesDiv = document.querySelector('.flex.flex-col.gap-3');
-
-  // 발언자별로 텍스트 그룹핑 (간단 버전)
-  const speakerTexts = {};
-  data.chunks.forEach(chunk => {
-    if (!speakerTexts[chunk.speaker]) {
-      speakerTexts[chunk.speaker] = [];
-    }
-    speakerTexts[chunk.speaker].push(chunk.text_preview);
-  });
-
-  // 핵심 의제 표시
-  issuesDiv.innerHTML = '';
-  let issueIndex = 1;
-
-  for (const [speaker, texts] of Object.entries(speakerTexts)) {
-    if (issueIndex > 3) break; // 최대 3개만 표시
-
-    const issueDiv = document.createElement('div');
-    issueDiv.className = 'flex flex-col';
-    issueDiv.innerHTML = `
-      <p class="font-bold text-[#212121] dark:text-white text-base">${issueIndex}. ${speaker}의 발언</p>
-      <div class="pl-4 mt-2">
-        <p class="text-[#757575] dark:text-slate-300 text-sm leading-relaxed">
-          <strong>${speaker}:</strong> "${texts[0].substring(0, 150)}..."
-        </p>
-      </div>
+  // AI 요약 표시 (있으면)
+  if (data.ai_summary) {
+    const summarySection = document.createElement('div');
+    summarySection.className = 'bg-gray-100 dark:bg-slate-700/50 p-3 rounded-md mb-3';
+    summarySection.innerHTML = `
+      <p class="text-[#757575] dark:text-slate-300 text-sm font-medium leading-relaxed tracking-[-0.01em]">
+        <span class="font-bold text-primary dark:text-accent">AI 요약:</span> ${data.ai_summary}
+      </p>
     `;
-    issuesDiv.appendChild(issueDiv);
-    issueIndex++;
+    // 핵심 의제 섹션 앞에 삽입
+    const keyIssuesSection = document.querySelector('.flex.flex-col.gap-3').parentElement;
+    keyIssuesSection.parentElement.insertBefore(summarySection, keyIssuesSection);
   }
 
-  // 의안 원문 전체 보기 버튼
-  const fullTextButton = document.querySelector('button.bg-primary');
+  // Combined text 표시
+  const combinedTextElement = document.getElementById('combined-text');
+  if (data.combined_text) {
+    combinedTextElement.textContent = data.combined_text;
+  } else {
+    combinedTextElement.textContent = '전체 내용이 없습니다.';
+  }
+
+  // 핵심 의제 표시
+  const issuesDiv = document.querySelector('.flex.flex-col.gap-3');
+
+  if (data.key_issues && data.key_issues.length > 0) {
+    // AI가 생성한 핵심 의제 표시
+    issuesDiv.innerHTML = '';
+    data.key_issues.forEach((issue, index) => {
+      const issueDiv = document.createElement('div');
+      issueDiv.className = 'flex flex-col';
+      issueDiv.innerHTML = `
+        <p class="font-bold text-[#212121] dark:text-white text-base">${index + 1}. ${issue}</p>
+      `;
+      issuesDiv.appendChild(issueDiv);
+    });
+  } else {
+    // 핵심 의제가 없으면 발언자별로 텍스트 그룹핑 (기존 방식)
+    const speakerTexts = {};
+    data.chunks.forEach(chunk => {
+      if (!speakerTexts[chunk.speaker]) {
+        speakerTexts[chunk.speaker] = [];
+      }
+      speakerTexts[chunk.speaker].push(chunk.text_preview);
+    });
+
+    issuesDiv.innerHTML = '';
+    let issueIndex = 1;
+
+    for (const [speaker, texts] of Object.entries(speakerTexts)) {
+      if (issueIndex > 3) break; // 최대 3개만 표시
+
+      const issueDiv = document.createElement('div');
+      issueDiv.className = 'flex flex-col';
+      issueDiv.innerHTML = `
+        <p class="font-bold text-[#212121] dark:text-white text-base">${issueIndex}. ${speaker}의 발언</p>
+        <div class="pl-4 mt-2">
+          <p class="text-[#757575] dark:text-slate-300 text-sm leading-relaxed">
+            <strong>${speaker}:</strong> "${texts[0].substring(0, 150)}..."
+          </p>
+        </div>
+      `;
+      issuesDiv.appendChild(issueDiv);
+      issueIndex++;
+    }
+  }
+
+  // 원본 회의 영상 보기 버튼
+  const originalUrlButton = document.getElementById('original-url-button');
   if (data.meeting_url) {
-    fullTextButton.onclick = () => {
+    originalUrlButton.onclick = () => {
       window.open(data.meeting_url, '_blank');
     };
+  } else {
+    originalUrlButton.disabled = true;
+    originalUrlButton.classList.add('opacity-50', 'cursor-not-allowed');
   }
 }
 

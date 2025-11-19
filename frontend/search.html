@@ -3,7 +3,6 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>서울시의회 정보 서비스 - 검색 결과</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&amp;family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
@@ -13,28 +12,31 @@
         font-family: "Noto Sans KR", "Public Sans", sans-serif;
       }
     </style>
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            colors: {
-              "primary": "#0052A4",
-              "background-light": "#f6f6f8",
-              "background-dark": "#101622",
-              "seoul-blue": "#0052A4",
-              "accent": "#2F9DFF",
-              "neutral-gray-dark": "#333333",
-              "neutral-gray-light": "#757575",
+<script>
+      tailwind = {
+        config: {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "primary": "#0052A4",
+                "background-light": "#f6f6f8",
+                "background-dark": "#101622",
+                "seoul-blue": "#0052A4",
+                "accent": "#2F9DFF",
+                "neutral-gray-dark": "#333333",
+                "neutral-gray-light": "#757575",
+              },
+              fontFamily: {
+                "display": ["Noto Sans KR", "Public Sans", "sans-serif"]
+              },
+              borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
             },
-            fontFamily: {
-              "display": ["Noto Sans KR", "Public Sans", "sans-serif"]
-            },
-            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
           },
-        },
+        }
       }
     </script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <style>
     body {
       min-height: max(884px, 100dvh);
@@ -234,7 +236,7 @@
             </div>
             <div class="bg-gray-100 dark:bg-neutral-700/50 p-3 rounded-md mb-3">
               <p class="text-neutral-gray-light dark:text-gray-300 text-sm font-medium leading-relaxed tracking-[-0.01em]">
-                <span class="font-bold text-primary dark:text-accent">AI 요약:</span> ${result.ai_summary}
+                <span class="font-bold text-primary dark:text-accent">AI 요약:</span> ${result.ai_summary || '요약 생성 중...'}
               </p>
             </div>
             <div class="flex items-center gap-2 flex-wrap text-sm text-neutral-gray-light dark:text-gray-400 mb-2">

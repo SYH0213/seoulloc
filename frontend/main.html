@@ -3,30 +3,32 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>SeoulLog - 서울시의회 AI 정보 서비스</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
-<script id="tailwind-config">
-    tailwind.config = {
-      darkMode: "class",
-      theme: {
-        extend: {
-          colors: {
-            "primary": "#0052A4",
-            "secondary": "#666666",
-            "accent": "#FFB600",
-            "background-light": "#F5F5F7",
-            "background-dark": "#101622",
+<script>
+    tailwind = {
+      config: {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#0052A4",
+              "secondary": "#666666",
+              "accent": "#FFB600",
+              "background-light": "#F5F5F7",
+              "background-dark": "#101622",
+            },
+            fontFamily: {
+              "display": ["Public Sans", "Noto Sans KR", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
           },
-          fontFamily: {
-            "display": ["Public Sans", "Noto Sans KR", "sans-serif"]
-          },
-          borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
         },
-      },
+      }
     }
   </script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <style>
     .material-symbols-outlined {
       font-variation-settings:
