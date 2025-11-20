@@ -21,9 +21,7 @@ class QueryMetadata(TypedDict):
     """추출된 메타데이터"""
     speaker: Optional[str]
     topic: str
-    agenda: Optional[str]
     meeting_date: Optional[str]
-    intent: str
 
 
 class QueryAnalyzer:
@@ -64,27 +62,16 @@ class QueryAnalyzer:
    - 직책 + 이름 형태로 추출
    - 없으면 null
 
-2. topic: 주제/키워드 (검색어로 사용될 핵심 주제)
+2. topic: 주제/키워드 (로깅/분석용)
    - 질문의 핵심 주제를 추출
-   - **중요**: speaker, meeting_date, agenda 중 하나라도 있으면 topic이 없어도 검색 가능 → null로 설정
-   - **단일 키워드도 검색 가능**: "강동구", "안전", "예산", "싱크홀", "AI" 등 모든 명사는 그대로 topic으로 설정
-   - **애매한 경우**: 구체적인 명사가 없고 지시어/대명사만 있으면("그거", "뭐", "응" 등) → 사용자의 원본 질문을 그대로 넣어서 검색하므로 null로 설정
+   - **중요**: speaker, meeting_date 중 하나라도 있으면 topic이 없어도 검색 가능 → null로 설정
+   - **단일 키워드도 추출**: "강동구", "안전", "예산", "싱크홀", "AI" 등 모든 명사는 그대로 topic으로 설정
+   - **애매한 경우**: 구체적인 명사가 없고 지시어/대명사만 있으면 null로 설정
    - 빈 문자열 절대 금지
 
-3. agenda: 안건 키워드 (예: "추가경정예산안", "현안업무")
-   - 특정 안건 언급 시에만 추출
-   - 없으면 null
-
-4. meeting_date: 회의 날짜 (YYYY.MM.DD 형식)
+3. meeting_date: 회의 날짜 (YYYY.MM.DD 형식)
    - "2025년 9월 1일" → "2025.09.01"
    - 없으면 null
-
-5. intent: 질문 의도
-   - "질의_내용_찾기": 특정 인물의 발언 찾기
-   - "주제_검색": 특정 주제 관련 내용 찾기
-   - "정보_조회": 사업 진행 상황 등 정보 조회
-   - "비교_분석": 여러 의견 비교
-   - "시간_추적": 특정 사업의 시간별 변화
 
 예시:
 질문: "윤기섭 위원이 싱크홀에 대해 뭐라고 했어?"
@@ -92,9 +79,7 @@ class QueryAnalyzer:
 {
   "speaker": "윤기섭 위원",
   "topic": "싱크홀",
-  "agenda": null,
-  "meeting_date": null,
-  "intent": "질의_내용_찾기"
+  "meeting_date": null
 }
 
 질문: "그거 알려줘"
@@ -102,9 +87,7 @@ class QueryAnalyzer:
 {
   "speaker": null,
   "topic": null,
-  "agenda": null,
-  "meeting_date": null,
-  "intent": "정보_조회"
+  "meeting_date": null
 }
 
 질문: "윤기섭 위원이 뭐라고 했어?"
@@ -112,9 +95,7 @@ class QueryAnalyzer:
 {
   "speaker": "윤기섭 위원",
   "topic": null,
-  "agenda": null,
-  "meeting_date": null,
-  "intent": "질의_내용_찾기"
+  "meeting_date": null
 }
 
 질문: "2025년 9월 1일 회의 내용"
@@ -122,9 +103,7 @@ class QueryAnalyzer:
 {
   "speaker": null,
   "topic": null,
-  "agenda": null,
-  "meeting_date": "2025.09.01",
-  "intent": "정보_조회"
+  "meeting_date": "2025.09.01"
 }
 
 질문: "AI"
@@ -132,9 +111,7 @@ class QueryAnalyzer:
 {
   "speaker": null,
   "topic": "AI",
-  "agenda": null,
-  "meeting_date": null,
-  "intent": "주제_검색"
+  "meeting_date": null
 }
 
 질문: "동북선 공정률 알려줘"
@@ -142,9 +119,7 @@ class QueryAnalyzer:
 {
   "speaker": null,
   "topic": "동북선 공정률",
-  "agenda": null,
-  "meeting_date": null,
-  "intent": "정보_조회"
+  "meeting_date": null
 }
 
 질문: "2025년 9월 1일 회의에서 안대희 본부장이 안전에 대해 한 말"
@@ -152,19 +127,15 @@ class QueryAnalyzer:
 {
   "speaker": "도시기반시설본부장 안대희",
   "topic": "안전",
-  "agenda": null,
-  "meeting_date": "2025.09.01",
-  "intent": "질의_내용_찾기"
+  "meeting_date": "2025.09.01"
 }
 
-질문: "추경예산안 내용 뭐야?"
+질문: "청년안심주택 공급 확대 조례안"
 답변:
 {
   "speaker": null,
-  "topic": "예산",
-  "agenda": "추가경정예산안",
-  "meeting_date": null,
-  "intent": "주제_검색"
+  "topic": "청년안심주택 공급 확대 조례안",
+  "meeting_date": null
 }
 
 반드시 순수 JSON만 출력하세요. 설명은 하지 마세요."""
@@ -189,16 +160,12 @@ class QueryAnalyzer:
         print(f"✅ 분석 완료:")
         print(f"   발언자: {metadata.get('speaker', 'None')}")
         print(f"   주제: {metadata.get('topic', 'None')}")
-        print(f"   안건: {metadata.get('agenda', 'None')}")
-        print(f"   날짜: {metadata.get('meeting_date', 'None')}")
-        print(f"   의도: {metadata.get('intent', 'None')}\n")
+        print(f"   날짜: {metadata.get('meeting_date', 'None')}\n")
 
         return QueryMetadata(
             speaker=metadata.get('speaker'),
             topic=metadata.get('topic', ''),
-            agenda=metadata.get('agenda'),
-            meeting_date=metadata.get('meeting_date'),
-            intent=metadata.get('intent', '주제_검색')
+            meeting_date=metadata.get('meeting_date')
         )
 
 

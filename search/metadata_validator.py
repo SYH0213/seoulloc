@@ -183,7 +183,7 @@ class MetadataValidator:
         all_speakers: List[str]
     ) -> List[str]:
         """
-        유사한 발언자 이름 찾기 (공백 기준 분리)
+        유사한 발언자 이름 찾기 (엄격한 매칭)
 
         Args:
             speaker: 찾으려는 발언자
@@ -193,43 +193,47 @@ class MetadataValidator:
             유사한 발언자 목록
 
         예시:
-            - "윤기섭" → ["윤기섭", "위원"] 중 "윤기섭" 매칭 ✅
-            - "안대희" → ["도시기반시설본부장", "안대희"] 중 "안대희" 매칭 ✅
-            - "윤기섭위원" → 공백 제거 후 "윤기섭위원" == "윤기섭위원" ✅
+            - "윤기섭" → ["윤기섭 위원"] 매칭 ✅
+            - "안대희" → ["도시기반시설본부장 안대희"] 매칭 ✅
+            - "윤기섭위원" → ["윤기섭 위원"] 매칭 ✅ (띄어쓰기 오류)
         """
         similar = []
 
-        # 입력 발언자를 공백으로 분리
+        # 입력 발언자를 공백으로 분리하여 이름 부분 추출
         input_parts = speaker.split()
 
+        # 이름만 추출 (직책 제외)
+        # 예: "윤기섭 위원" → "윤기섭", "도시기반시설본부장 안대희" → "안대희"
+        input_name = None
+        for part in reversed(input_parts):  # 뒤에서부터 검색 (이름이 보통 뒤에 있음)
+            if part not in ['위원', '위원장', '본부장', '국장', '과장', '의원']:
+                input_name = part
+                break
+
+        if not input_name:
+            input_name = input_parts[-1] if input_parts else speaker
+
         for s in all_speakers:
-            # DB 발언자를 공백으로 분리
-            db_parts = s.split()
-
             # 전략 1: 완전 일치
-            if speaker == s:
+            if speaker.lower() == s.lower():
                 similar.append(s)
                 continue
 
-            # 전략 2: 공백으로 분리한 부분 중 하나라도 일치하면 매칭
-            # 예: "윤기섭" in ["윤기섭", "위원"] → True
-            # 예: "안대희" in ["도시기반시설본부장", "안대희"] → True
-            match = False
-            for input_part in input_parts:
-                if input_part in db_parts:
-                    match = True
-                    break
+            # 전략 2: 이름 부분이 정확히 포함되어 있는지 확인
+            # 예: "윤기섭" in "윤기섭 위원" → True
+            # 예: "안대희" in "도시기반시설본부장 안대희" → True
+            if input_name in s:
+                # 이름 길이가 너무 짧으면 (1-2글자) 잘못된 매칭 방지
+                if len(input_name) >= 2:
+                    similar.append(s)
+                    continue
 
-            if match:
-                similar.append(s)
-                continue
-
-            # 전략 3: 띄어쓰기 오류 처리 (공백 제거 후 부분 문자열 비교)
-            # 예: "윤기섭위원" vs "윤기섭 위원"
+            # 전략 3: 띄어쓰기 오류 처리 (정확한 일치만)
+            # 예: "윤기섭위원" == "윤기섭위원" (띄어쓰기 제거 후 완전 일치)
             speaker_no_space = speaker.replace(" ", "")
             s_no_space = s.replace(" ", "")
 
-            if speaker_no_space in s_no_space or s_no_space in speaker_no_space:
+            if speaker_no_space == s_no_space:
                 similar.append(s)
 
         return similar[:3]  # 최대 3개만
