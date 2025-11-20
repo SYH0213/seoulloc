@@ -25,6 +25,7 @@ import chromadb
 import os
 from dotenv import load_dotenv
 from utils.custom_openai_embedding import CustomOpenAIEmbeddingFunction
+from utils.cost_tracker import CostTracker
 
 # 파이프라인 모듈 import
 from search.query_analyzer import QueryAnalyzer
@@ -35,6 +36,9 @@ from search.result_formatter import ResultFormatter
 from search.answer_generator_simple import SimpleAnswerGenerator
 
 load_dotenv()
+
+# 비용 추적기 초기화
+cost_tracker = CostTracker()
 
 
 app = FastAPI(title="SeoulLog API")
@@ -90,14 +94,31 @@ except Exception as e:
     print("   → SimpleQueryAnalyzer (규칙 기반) 사용")
     analyzer = SimpleQueryAnalyzer()
 
-# 파이프라인 모듈들 (현재 미사용 - backend_server에서 직접 ChromaDB/SQLite 조회)
-# validator = MetadataValidator()
+# MetadataValidator 초기화
+try:
+    validator = MetadataValidator(
+        collection_name="seoul_council_meetings",
+        persist_directory="./data/chroma_db"
+    )
+    print("✅ MetadataValidator 초기화 성공")
+except Exception as e:
+    print(f"⚠️ MetadataValidator 초기화 실패: {e}")
+    validator = None
+
+# 나머지 파이프라인 모듈들 (미사용)
 # searcher = SearchExecutor()
 # formatter = ResultFormatter()
 # answer_generator = SimpleAnswerGenerator()
 
 # ChromaDB 클라이언트 초기화 (안건 검색용)
-chroma_client = chromadb.PersistentClient(path="./data/chroma_db")
+from chromadb.config import Settings
+
+chroma_client = chromadb.PersistentClient(
+    path="./data/chroma_db",
+    settings=Settings(
+        anonymized_telemetry=False  # Telemetry 비활성화 (posthog 버전 충돌 방지)
+    )
+)
 openai_ef = CustomOpenAIEmbeddingFunction(
     api_key=os.getenv("OPENAI_API_KEY"),
     model_name="text-embedding-3-small"
@@ -106,7 +127,7 @@ chroma_collection = chroma_client.get_collection(
     name="seoul_council_meetings",
     embedding_function=openai_ef
 )
-print("✅ ChromaDB 연결 성공")
+print("✅ ChromaDB 연결 성공 (Telemetry 비활성화)")
 
 # SQLite DB 경로
 SQLITE_DB_PATH = "data/sqlite_DB/agendas.db"
@@ -157,10 +178,90 @@ async def search(request: SearchRequest):
 
         print(f"🔍 검색 요청: {user_query}")
 
-        # Step 1: ChromaDB 청크 검색 (벡터 유사도)
+        # 비용 추적 시작
+        search_cost_tracker = CostTracker()
+
+        # Step 0: 파이프라인 - 쿼리 분석 및 메타데이터 추출
+        analyzed_metadata = None
+        where_filter = None
+
+        try:
+            # QueryAnalyzer로 메타데이터 추출
+            analyzed_metadata = analyzer.analyze(user_query)
+
+            # QueryAnalyzer 비용 추적 (대략적인 추정)
+            # 프롬프트 토큰 (~500) + 쿼리 토큰 + 출력 토큰 (~100)
+            query_tokens = search_cost_tracker.count_tokens(user_query)
+            search_cost_tracker.add_chat_cost(
+                input_tokens=500 + query_tokens,  # 시스템 프롬프트 + 쿼리
+                output_tokens=100,  # JSON 출력 (평균)
+                model="gpt-4o-mini"
+            )
+            print(f"   분석 결과:")
+            print(f"     - speaker: {analyzed_metadata.get('speaker')}")
+            print(f"     - topic: {analyzed_metadata.get('topic')}")
+            print(f"     - meeting_date: {analyzed_metadata.get('meeting_date')}")
+
+            # MetadataValidator로 검증 및 보정
+            if validator and (analyzed_metadata.get('speaker') or analyzed_metadata.get('meeting_date')):
+                validation_result = validator.validate(analyzed_metadata)
+
+                if not validation_result.is_valid:
+                    # 검증 실패 시 빈 결과 반환 (에러 아님)
+                    print(f"   ⚠️ 검증 실패: {validation_result.message}")
+                    if validation_result.suggestions:
+                        print(f"   💡 혹시 이것을 찾으셨나요?")
+                        for suggestion in validation_result.suggestions[:3]:
+                            print(f"      - {suggestion}")
+
+                    return SearchResponse(
+                        query=user_query,
+                        results=[],
+                        total_results=0
+                    )
+
+                # 보정된 메타데이터 사용
+                if validation_result.corrected_metadata:
+                    analyzed_metadata = validation_result.corrected_metadata
+                    print(f"   보정된 메타데이터:")
+                    print(f"     - speaker: {analyzed_metadata.get('speaker')}")
+                    print(f"     - meeting_date: {analyzed_metadata.get('meeting_date')}")
+
+            # ChromaDB where 필터 구성
+            # ChromaDB는 여러 조건 사용 시 $and 연산자 필요
+            # 참고: agenda는 필터링하지 않고 벡터 검색에만 의존 (ChromaDB에서 부분 일치 불가)
+            where_conditions = []
+            if analyzed_metadata.get('speaker'):
+                where_conditions.append({'speaker': analyzed_metadata['speaker']})
+            if analyzed_metadata.get('meeting_date'):
+                where_conditions.append({'meeting_date': analyzed_metadata['meeting_date']})
+
+            # 여러 조건이 있으면 $and로 묶기
+            where_filter = None
+            if len(where_conditions) == 1:
+                where_filter = where_conditions[0]
+            elif len(where_conditions) > 1:
+                where_filter = {'$and': where_conditions}
+
+            if where_filter:
+                print(f"   필터 적용: {where_filter}")
+
+        except Exception as e:
+            print(f"   ⚠️ 파이프라인 처리 중 오류 (검색 계속 진행): {e}")
+            analyzed_metadata = None
+            where_filter = None
+
+        # Step 1: ChromaDB 청크 검색 (벡터 유사도 + 필터)
+        # Embedding 비용 추적
+        embedding_cost = search_cost_tracker.add_embedding_cost(
+            text=user_query,
+            model="text-embedding-3-small"
+        )
+
         chunk_results = chroma_collection.query(
             query_texts=[user_query],
-            n_results=min(20, n_results * 4)  # 안건별 그룹핑 고려하여 더 많이 검색
+            n_results=min(20, n_results * 4),  # 안건별 그룹핑 고려하여 더 많이 검색
+            where=where_filter if where_filter else None  # 필터 적용
         )
 
         print(f"   청크 검색 결과: {len(chunk_results['ids'][0])}개")
@@ -262,6 +363,30 @@ async def search(request: SearchRequest):
 
         print(f"   최종 안건 결과: {len(formatted_results)}건")
 
+        # 비용 출력
+        cost_summary = search_cost_tracker.get_summary()
+        print(f"\n💰 검색 비용:")
+        print(f"   Embedding: {cost_summary['breakdown'].get('embedding', {}).get('cost', 0)*1300:.4f}원")
+        if 'chat' in cost_summary['breakdown']:
+            print(f"   QueryAnalyzer: {cost_summary['breakdown']['chat']['cost']*1300:.4f}원")
+        print(f"   총 비용: {cost_summary['total_cost_krw']}")
+
+        # 전역 추적기에도 누적
+        global cost_tracker
+        cost_tracker.total_cost += search_cost_tracker.total_cost
+        for key, value in search_cost_tracker.costs_breakdown.items():
+            if key not in cost_tracker.costs_breakdown:
+                cost_tracker.costs_breakdown[key] = {
+                    "tokens": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost": 0.0,
+                    "calls": 0
+                }
+            for subkey, subvalue in value.items():
+                if subkey in cost_tracker.costs_breakdown[key]:
+                    cost_tracker.costs_breakdown[key][subkey] += subvalue
+
         return SearchResponse(
             query=user_query,
             total_results=len(formatted_results),
@@ -323,6 +448,90 @@ async def get_hot_issues():
     ]
 
     return hot_issues
+
+
+class TopAgenda(BaseModel):
+    """Top 안건 모델"""
+    agenda_id: str
+    title: str
+    meeting_title: str
+    meeting_date: str
+    ai_summary: Optional[str] = None
+    chunk_count: int
+    main_speaker: str
+    status: str
+
+
+@app.get("/api/top-agendas", response_model=List[TopAgenda])
+async def get_top_agendas():
+    """
+    Top 5 안건 조회 (논의가 활발했던 최신 안건)
+
+    Returns:
+        Top 5 안건 리스트
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        # 최신 안건 중 논의가 활발했던 것 선택
+        # 개의/산회 제외, chunk_count > 10
+        cursor.execute('''
+            SELECT agenda_id, agenda_title, meeting_title, meeting_date,
+                   ai_summary, chunk_count, main_speaker, status
+            FROM agendas
+            WHERE agenda_title NOT LIKE '%개의%'
+              AND agenda_title NOT LIKE '%산회%'
+              AND chunk_count > 10
+            ORDER BY meeting_date DESC, chunk_count DESC
+            LIMIT 5
+        ''')
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        top_agendas = []
+        for row in rows:
+            top_agendas.append(TopAgenda(
+                agenda_id=row[0],
+                title=row[1],
+                meeting_title=row[2],
+                meeting_date=row[3],
+                ai_summary=row[4] or "요약 없음",
+                chunk_count=row[5],
+                main_speaker=row[6],
+                status=row[7]
+            ))
+
+        return top_agendas
+
+    except Exception as e:
+        print(f"❌ Top 안건 조회 중 오류: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/cost-summary")
+async def get_cost_summary():
+    """
+    누적 API 비용 요약 조회
+
+    Returns:
+        비용 요약 딕셔너리
+    """
+    summary = cost_tracker.get_summary()
+
+    # 상세 정보 추가
+    detailed_summary = {
+        **summary,
+        "session_info": {
+            "total_searches": cost_tracker.costs_breakdown.get('embedding', {}).get('calls', 0),
+            "total_queries_analyzed": cost_tracker.costs_breakdown.get('chat', {}).get('calls', 0)
+        }
+    }
+
+    return detailed_summary
 
 
 @app.get("/details", response_class=HTMLResponse)
@@ -458,9 +667,28 @@ if __name__ == "__main__":
     print("📄 메인 페이지: /")
     print("🔍 검색 API: /api/search")
     print("🔥 핫이슈 API: /api/hot-issues")
+    print("💰 비용 요약 API: /api/cost-summary")
+    print()
+    print("💡 검색 1회당 비용: 약 0.03~0.05원 (QueryAnalyzer 사용 시)")
+    print("   - Embedding: ~0.001원")
+    print("   - QueryAnalyzer: ~0.04원")
     print()
     print("서버를 종료하려면 Ctrl+C를 누르세요.")
     print("=" * 80)
     print()
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except KeyboardInterrupt:
+        print("\n\n" + "=" * 80)
+        print("🛑 서버 종료 중...")
+        print("=" * 80)
+
+        # 전체 세션 비용 출력
+        if cost_tracker.total_cost > 0:
+            cost_tracker.print_summary()
+        else:
+            print("\n💰 이번 세션에서는 검색이 없었습니다.")
+            print("=" * 80 + "\n")
+
+        print("👋 SeoulLog 서버가 종료되었습니다.\n")
