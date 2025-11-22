@@ -483,6 +483,136 @@ class AgendaSearchService:
 
 ---
 
+### ✅ 7. 리팩토링 후 버그 수정 및 추가 개선 (테스트 결과 반영)
+
+#### 7-1. Pydantic Validation Error 수정 ⚠️ 버그 픽스
+
+**문제 발견**:
+서버 실행 후 `/api/top-agendas` 엔드포인트 테스트 중 발견
+
+**증상**:
+```
+fastapi.exceptions.ResponseValidationError: 5 validation errors:
+{'type': 'missing', 'loc': ('response', 0, 'title'), 'msg': 'Field required'}
+```
+
+**원인 분석**:
+- TopAgenda Pydantic 모델: `title` 필드 기대
+- AgendaRepository.find_top_agendas(): DB의 `agenda_title` 필드 반환
+- AgendaService.get_top_agendas(): Repository 결과를 그대로 반환
+- **필드명 불일치** 발생 (리팩토링 과정에서 발생한 버그)
+
+**원래 코드의 동작**:
+리팩토링 전 backend_server.py는 SQL 쿼리 결과를 TopAgenda 객체로 변환할 때 암묵적으로 필드 매핑을 수행했으나, 리팩토링 후 Service 계층에서 매핑이 누락됨.
+
+**해결 방법**:
+Service 계층에서 명시적 필드 매핑 추가
+
+```python
+# services/agenda_service.py
+async def get_top_agendas(self, limit: int = 5) -> List[Dict]:
+    agendas = self.agenda_repo.find_top_agendas(...)
+
+    # Repository의 agenda_title → Pydantic 모델의 title 필드로 매핑
+    return [
+        {
+            "agenda_id": agenda['agenda_id'],
+            "title": agenda['agenda_title'],  # ⭐ 필드명 매핑
+            "meeting_title": agenda['meeting_title'],
+            "meeting_date": agenda['meeting_date'],
+            "ai_summary": agenda.get('ai_summary'),
+            "chunk_count": agenda['chunk_count'],
+            "main_speaker": agenda['main_speaker'],
+            "status": agenda['status']
+        }
+        for agenda in agendas
+    ]
+```
+
+**수정 파일**:
+- `services/agenda_service.py` (get_top_agendas 메서드)
+
+**Git Commit**: `0209f02`
+
+---
+
+#### 7-2. Top 안건 API에 agenda_type 필터링 적용 ⭐ 기능 추가
+
+**배경**:
+사용자 피드백: "주목받는 안건 TOP 5에 안건이 아닌 것도 들어가는 것 같다"
+
+**문제 분석**:
+- 검색 API (`/api/search`)에는 agenda_type 필터링 적용됨
+- Top 안건 API (`/api/top-agendas`)에는 **적용 안 됨**
+- 절차적 안건(개회, 산회), 토론, 기타도 TOP 5에 포함됨
+
+**기존 TOP 5 선정 기준**:
+```sql
+WHERE agenda_title NOT LIKE '%개의%'
+  AND agenda_title NOT LIKE '%산회%'
+  AND chunk_count > 10
+ORDER BY meeting_date DESC, chunk_count DESC
+```
+→ 제목 필터링만 있고 **agenda_type 필터링 없음**
+
+**구현**:
+
+**1. Repository 계층 수정**:
+```python
+# repositories/agenda_repository.py
+def find_top_agendas(
+    self,
+    limit: int = 5,
+    exclude_titles_like: List[str] = None,
+    exclude_agenda_types: List[str] = None  # ⭐ 신규 파라미터
+) -> List[Dict]:
+    # ...
+
+    # agenda_type 필터링
+    if exclude_agenda_types:
+        type_placeholders = ','.join('?' * len(exclude_agenda_types))
+        where_conditions.append(f'agenda_type NOT IN ({type_placeholders})')
+        params.extend(exclude_agenda_types)
+```
+
+**2. Service 계층 수정**:
+```python
+# services/agenda_service.py
+class AgendaService:
+    # 검색 서비스와 동일한 필터링 규칙 적용
+    EXCLUDED_AGENDA_TYPES = ["procedural", "discussion", "other"]
+
+    async def get_top_agendas(self, limit: int = 5) -> List[Dict]:
+        agendas = self.agenda_repo.find_top_agendas(
+            limit=limit,
+            exclude_titles_like=['%개의%', '%산회%'],
+            exclude_agenda_types=self.EXCLUDED_AGENDA_TYPES  # ⭐ 적용
+        )
+```
+
+**개선된 TOP 5 선정 기준**:
+```sql
+WHERE agenda_title NOT LIKE '%개의%'
+  AND agenda_title NOT LIKE '%산회%'
+  AND chunk_count > 10
+  AND agenda_type NOT IN ('procedural', 'discussion', 'other')  -- ✅ 추가
+ORDER BY meeting_date DESC, chunk_count DESC
+LIMIT 5
+```
+
+**효과**:
+- ✅ Top 안건에도 실제 안건만 표시 (조례, 보고, 예산, 동의안)
+- ✅ 검색 API와 Top 안건 API의 필터링 정책 일관성 확보
+- ✅ 사용자 경험 개선
+
+**수정 파일**:
+- `repositories/agenda_repository.py` (find_top_agendas 메서드)
+- `services/agenda_service.py` (EXCLUDED_AGENDA_TYPES 상수 추가, get_top_agendas 메서드)
+
+**Git Commit**: `b110602`
+
+---
+
 ## 📊 성능 및 품질 지표
 
 ### 코드 품질 향상
@@ -535,7 +665,7 @@ REFACTORING_PLAN.md           (1200+ 줄)
 
 ## 🔧 Git Commit 내역
 
-총 4개의 커밋 생성:
+총 6개의 커밋 생성:
 
 ### 1️⃣ docs: 네이밍 규칙 및 리팩토링 계획 문서 추가
 ```
@@ -576,6 +706,28 @@ REFACTORING_PLAN.md           (1200+ 줄)
 - POST /api/search: 237줄 → 15줄 (-94%)
 - 라우팅과 비즈니스 로직 완전 분리
 - 단일 책임 원칙 (SRP) 준수
+
+### 5️⃣ fix: Service 계층에서 agenda_title → title 필드 매핑 추가
+```
+커밋: 0209f02
+파일: services/agenda_service.py
+```
+- **리팩토링 과정에서 발생한 버그 수정**
+- AgendaService.get_top_agendas()에서 필드명 매핑 추가
+- Repository의 agenda_title을 TopAgenda 모델의 title로 변환
+- GET /api/top-agendas 엔드포인트 Pydantic validation error 해결
+
+### 6️⃣ feat: Top 안건 조회에 agenda_type 필터링 추가
+```
+커밋: b110602
+파일: repositories/agenda_repository.py
+      services/agenda_service.py
+```
+- **사용자 피드백 반영**: "안건이 아닌 것도 TOP 5에 포함됨"
+- Repository의 find_top_agendas()에 exclude_agenda_types 파라미터 추가
+- Service에 EXCLUDED_AGENDA_TYPES 상수 정의
+- 절차적 안건(procedural), 토론(discussion), 기타(other) 제외
+- 검색 API와 Top 안건 API의 필터링 정책 일관성 확보
 
 ---
 
@@ -985,18 +1137,20 @@ python database/insert_to_chromadb.py
 
 ## ✅ 체크리스트
 
-### 완료된 작업
+### 완료된 작업 (2025-11-22)
 - [x] 네이밍 규칙 정립 및 문서화
 - [x] 리팩토링 계획 수립 및 문서화
 - [x] Repository 계층 구현
 - [x] Service 계층 구현
 - [x] backend_server.py 리팩토링
-- [x] agenda_type 필터링 추가
-- [x] Git commit (4개)
-- [x] 인수인계 문서 작성 (HANDOVER3.md)
+- [x] 검색 API에 agenda_type 필터링 추가
+- [x] **Pydantic validation error 버그 수정** (리팩토링 후 테스트 결과 반영)
+- [x] **Top 안건 API에도 agenda_type 필터링 추가** (사용자 피드백 반영)
+- [x] Git commit (6개)
+- [x] 인수인계 문서 작성 및 업데이트 (HANDOVER3.md)
 
 ### 다음 작업자가 해야 할 일
-- [ ] 서버 실행 및 동작 확인
+- [ ] 서버 실행 및 동작 확인 (사용자 환경)
 - [ ] API 테스트 (POST /api/search, GET /api/top-agendas)
 - [ ] agenda_type 필터링 동작 확인
 - [ ] 유닛 테스트 작성
@@ -1006,6 +1160,7 @@ python database/insert_to_chromadb.py
 
 ---
 
-**마지막 업데이트**: 2025-11-22
-**문서 버전**: 1.0
+**마지막 업데이트**: 2025-11-22 (완료)
+**문서 버전**: 2.0 (버그 수정 및 추가 개선 반영)
 **프로젝트**: SeoulLog - 서울시의회 회의록 검색 시스템
+**작업 완료**: 2025-11-22 Clean Architecture 리팩토링 및 테스트 기반 개선 완료
