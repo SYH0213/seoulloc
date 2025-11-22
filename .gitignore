@@ -126,3 +126,8 @@ credentials.json
 SESSION_332_*.txt
 selenium_debug.png
 *.md.backup
+
+# 스크린샷 및 임시 데이터
+capture.png
+error.png
+data.zip
