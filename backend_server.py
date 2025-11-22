@@ -580,7 +580,7 @@ async def get_agenda_detail(agenda_id: str):
 
         # 청크 상세 정보 조회 (발언자별 입장 분석용)
         cursor.execute('''
-            SELECT chunk_id, speaker, text_preview
+            SELECT chunk_id, speaker, full_text
             FROM agenda_chunks
             WHERE agenda_id = ?
             ORDER BY chunk_index
@@ -617,7 +617,7 @@ async def get_agenda_detail(agenda_id: str):
                 {
                     "chunk_id": chunk[0],
                     "speaker": chunk[1],
-                    "text_preview": chunk[2]
+                    "full_text": chunk[2]
                 }
                 for chunk in chunks
             ]
@@ -627,6 +627,71 @@ async def get_agenda_detail(agenda_id: str):
         raise
     except Exception as e:
         print(f"❌ 안건 상세 조회 중 오류: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/agenda/{agenda_id}/formatted-detail")
+async def get_formatted_agenda_detail(agenda_id: str):
+    """
+    안건 상세 페이지용 포맷된 텍스트 생성
+
+    프롬프트 규칙:
+    1. 최상단 제목: agenda_title
+    2. 안건의 세부 내용 요약 (3-6줄)
+    3. 첨부 문서가 있을 경우 나열 (소주제 + 요약)
+
+    Returns:
+        {
+            "agenda_title": "...",
+            "summary": "...",  # 3-6줄 요약
+            "attachments": [{"title": "...", "summary": "..."}]
+        }
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        # 안건 정보 조회
+        cursor.execute('''
+            SELECT agenda_title, ai_summary, attachments, combined_text
+            FROM agendas
+            WHERE agenda_id = ?
+        ''', (agenda_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail=f"안건을 찾을 수 없습니다: {agenda_id}")
+
+        agenda_title = row[0]
+        ai_summary = row[1]
+        attachments_json = row[2]
+        combined_text = row[3]
+
+        # 첨부 문서 파싱
+        import json
+        attachments = []
+        if attachments_json:
+            try:
+                attachments = json.loads(attachments_json)
+            except:
+                pass
+
+        # 응답 생성
+        return {
+            "agenda_title": agenda_title,
+            "summary": ai_summary or "요약 생성 중...",
+            "attachments": attachments,
+            "combined_text": combined_text  # 전체 회의록 (필요시 사용)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 포맷된 안건 상세 조회 중 오류: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

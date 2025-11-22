@@ -124,10 +124,5 @@ credentials.json
 
 # 임시 스크립트
 SESSION_332_*.txt
-crawl_*.py
-extract_*.py
-fetch_*.py
-parse_meeting_data.py
-parse_real_data.py
 selenium_debug.png
 *.md.backup

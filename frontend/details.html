@@ -160,10 +160,10 @@ if (!agendaId) {
   window.location.href = '/';
 }
 
-// 안건 상세 정보 로드
+// 안건 상세 정보 로드 (포맷된 버전)
 async function loadAgendaDetail() {
   try {
-    const response = await fetch(`/api/agenda/${agendaId}`);
+    const response = await fetch(`/api/agenda/${agendaId}/formatted-detail`);
 
     if (!response.ok) {
       throw new Error('안건 정보를 불러올 수 없습니다.');
@@ -172,78 +172,91 @@ async function loadAgendaDetail() {
     const data = await response.json();
 
     // 페이지에 데이터 표시
-    displayAgendaDetail(data);
+    displayFormattedAgendaDetail(data);
   } catch (error) {
     console.error('Error:', error);
     alert('안건 정보를 불러오는데 실패했습니다.');
   }
 }
 
-function displayAgendaDetail(data) {
-  // 의안번호 (agenda_id 표시)
-  document.querySelector('.text-xs.text-\\[\\#757575\\]').textContent = `의안번호: ${data.agenda_id}`;
+function displayFormattedAgendaDetail(data) {
+  // 프롬프트 규칙에 따른 표시:
+  // 1. 최상단 제목: agenda_title
+  // 2. 안건의 세부 내용 요약 (3-6줄)
+  // 3. 첨부 문서가 있을 경우 나열 (소주제 + 요약)
 
-  // 제목
-  document.querySelector('.text-xl.font-bold').textContent = data.title;
+  // 의안번호 (agenda_id)
+  document.querySelector('.text-xs.text-\\[\\#757575\\]').textContent = `의안: ${agendaId}`;
 
-  // 제안자 및 제안일자
+  // 제목 (agenda_title)
+  document.querySelector('.text-xl.font-bold').textContent = data.agenda_title;
+
+  // 제안자 정보는 숨김 처리 (프롬프트에 없음)
   const infoDiv = document.querySelector('.flex.flex-col.gap-1');
-  infoDiv.innerHTML = `
-    <p class="text-[#757575] dark:text-slate-400 text-sm font-normal leading-normal">주 발언자: ${data.main_speaker}</p>
-    <p class="text-[#757575] dark:text-slate-400 text-sm font-normal leading-normal">회의일자: ${data.meeting_date}</p>
-    <p class="text-[#757575] dark:text-slate-400 text-sm font-normal leading-normal">상태: ${data.status}</p>
+  infoDiv.innerHTML = '';
+
+  // 안건의 세부 내용 요약 (3-6줄) - ai_summary 사용
+  const issuesContainer = document.querySelector('.flex.flex-col.items-stretch.justify-start.rounded-xl.shadow-\\[0_2px_8px_rgba\\(0\\,0\\,0\\,0\\.08\\)\\]');
+  issuesContainer.querySelector('.flex.w-full.grow.flex-col').innerHTML = `
+    <div>
+      <p class="text-[#212121] dark:text-white text-lg font-bold leading-tight tracking-[-0.015em] mb-3">안건의 세부 내용 요약</p>
+      <p class="text-[#757575] dark:text-slate-300 text-base leading-relaxed whitespace-pre-line">${data.summary}</p>
+    </div>
+    ${data.attachments && data.attachments.length > 0 ? `
+      <div class="border-t border-slate-200 dark:border-slate-700 mt-4 pt-4">
+        <p class="text-[#212121] dark:text-white text-lg font-bold leading-tight tracking-[-0.015em] mb-3">첨부 문서</p>
+        <div class="flex flex-col gap-4">
+          ${data.attachments.map(attachment => `
+            <div>
+              <p class="font-bold text-[#212121] dark:text-white text-base mb-2">소주제: ${attachment.title}</p>
+              <p class="text-[#757575] dark:text-slate-300 text-sm leading-relaxed pl-4">${attachment.summary}</p>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
   `;
 
-  // 핵심 의제 표시
-  const issuesDiv = document.querySelector('.flex.flex-col.gap-3');
-
-  if (data.key_issues && data.key_issues.length > 0) {
-    // AI가 생성한 핵심 의제 표시
-    issuesDiv.innerHTML = '';
-    data.key_issues.forEach((issue, index) => {
-      const issueDiv = document.createElement('div');
-      issueDiv.className = 'flex flex-col';
-      issueDiv.innerHTML = `
-        <p class="font-bold text-[#212121] dark:text-white text-base">${index + 1}. ${issue}</p>
-      `;
-      issuesDiv.appendChild(issueDiv);
-    });
-  } else {
-    // 핵심 의제가 없으면 발언자별로 텍스트 그룹핑 (기존 방식)
-    const speakerTexts = {};
-    data.chunks.forEach(chunk => {
-      if (!speakerTexts[chunk.speaker]) {
-        speakerTexts[chunk.speaker] = [];
-      }
-      speakerTexts[chunk.speaker].push(chunk.text_preview);
-    });
-
-    issuesDiv.innerHTML = '';
-    let issueIndex = 1;
-
-    for (const [speaker, texts] of Object.entries(speakerTexts)) {
-      if (issueIndex > 3) break; // 최대 3개만 표시
-
-      const issueDiv = document.createElement('div');
-      issueDiv.className = 'flex flex-col';
-      issueDiv.innerHTML = `
-        <p class="font-bold text-[#212121] dark:text-white text-base">${issueIndex}. ${speaker}의 발언</p>
-        <div class="pl-4 mt-2">
-          <p class="text-[#757575] dark:text-slate-300 text-sm leading-relaxed">
-            <strong>${speaker}:</strong> "${texts[0].substring(0, 150)}..."
-          </p>
-        </div>
-      `;
-      issuesDiv.appendChild(issueDiv);
-      issueIndex++;
-    }
+  // 쉬운 용어 설명과 관련 의안 섹션 제거 (프롬프트에 없음)
+  const detailsElement = document.querySelector('details');
+  if (detailsElement) {
+    detailsElement.style.display = 'none';
   }
 
-  // 의안 원문 전체 보기 버튼
-  const fullTextButton = document.querySelector('button.bg-primary');
-  if (data.meeting_url) {
-    fullTextButton.onclick = () => {
-      window.open(data.meeting_url, '_blank');
+  const relatedSection = document.querySelector('.px-4.py-6');
+  if (relatedSection) {
+    relatedSection.style.display = 'none';
+  }
+
+  // 의안 원문 전체 보기 버튼 텍스트 변경
+  const fullTextButton = document.querySelector('button.bg-primary span:first-child');
+  if (fullTextButton) {
+    fullTextButton.textContent = '회의록 전체 내용 보기';
+  }
+
+  // 회의록 전체 내용 보기 기능
+  const fullTextBtn = document.querySelector('button.bg-primary');
+  if (fullTextBtn) {
+    fullTextBtn.onclick = () => {
+      // 새 섹션 추가하여 combined_text 표시
+      const existingFullText = document.getElementById('full-text-section');
+      if (existingFullText) {
+        existingFullText.remove();
+      } else {
+        const fullTextSection = document.createElement('div');
+        fullTextSection.id = 'full-text-section';
+        fullTextSection.className = 'p-4 pt-0';
+        fullTextSection.innerHTML = `
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+            <p class="text-[#212121] dark:text-white text-lg font-bold mb-3">회의록 전체 내용</p>
+            <div class="max-h-96 overflow-y-auto">
+              <p class="text-[#757575] dark:text-slate-300 text-sm leading-relaxed whitespace-pre-line">${data.combined_text}</p>
+            </div>
+          </div>
+        `;
+        fullTextBtn.parentElement.after(fullTextSection);
+        fullTextBtn.querySelector('span:first-child').textContent = '회의록 전체 내용 닫기';
+      }
     };
   }
 }

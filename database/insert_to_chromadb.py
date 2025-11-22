@@ -128,7 +128,7 @@ def insert_to_chromadb(
             # 회의 정보
             "meeting_title": meeting_info['title'],
             "meeting_date": meeting_info['date'],
-            "meeting_url": meeting_info['url'],
+            "meeting_url": meeting_info.get('meeting_url', ''),  # ✨ url → meeting_url
 
             # 청크 정보
             "speaker": chunk['speaker'],

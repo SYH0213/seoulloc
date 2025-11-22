@@ -93,7 +93,7 @@ async def summarize_agenda_async(chunk_summaries, agenda_title):
 
 {combined}
 
-위 내용을 통합하여 100-150자로 최종 요약하세요.
+위 내용을 통합하여 150자 이내로 최종 요약하세요.
 - 안건의 핵심 목적
 - 주요 논의 내용
 - 결론 또는 결과
@@ -108,7 +108,11 @@ async def summarize_agenda_async(chunk_summaries, agenda_title):
 
         await asyncio.sleep(1)
 
-        return summary[:160]  # 최대 160자로 제한
+        # 200자 넘으면 자르기 (LLM이 150자로 생성하므로 보통 200자 이하)
+        if len(summary) > 200:
+            summary = summary[:200]
+
+        return summary
     except Exception as e:
         print(f"  ⚠️ 최종 요약 실패: {e}")
         await asyncio.sleep(2)

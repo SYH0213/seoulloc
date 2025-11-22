@@ -41,7 +41,9 @@ def create_database():
         combined_text TEXT,
         ai_summary TEXT,
         key_issues TEXT,
-        status TEXT DEFAULT '심사중',
+        attachments TEXT,
+        agenda_type TEXT DEFAULT 'other',
+        status TEXT DEFAULT '접수',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
@@ -53,7 +55,7 @@ def create_database():
         agenda_id TEXT,
         chunk_index INTEGER,
         speaker TEXT,
-        text_preview TEXT,
+        full_text TEXT,
         FOREIGN KEY (agenda_id) REFERENCES agendas(agenda_id)
     )
     ''')
@@ -64,8 +66,17 @@ def create_database():
     return conn
 
 
-def group_chunks_by_agenda(chunks):
-    """청크를 안건별로 그룹핑"""
+def group_chunks_by_agenda(chunks, agenda_mapping=None):
+    """
+    청크를 안건별로 그룹핑
+
+    Args:
+        chunks: 청크 목록
+        agenda_mapping: 안건 매핑 (첨부 문서 정보 포함)
+
+    Returns:
+        agenda_groups: 안건별 그룹 (attachments 포함)
+    """
 
     agenda_groups = {}
 
@@ -76,12 +87,28 @@ def group_chunks_by_agenda(chunks):
             agenda_groups[agenda] = {
                 'texts': [],
                 'speakers': [],
-                'chunk_indices': []
+                'chunk_indices': [],
+                'attachments': [],
+                'status': '접수',  # 기본값
+                'agenda_type': 'other'  # 기본값
             }
 
         agenda_groups[agenda]['texts'].append(chunk['text'])
         agenda_groups[agenda]['speakers'].append(chunk.get('speaker', '발언자 없음'))
         agenda_groups[agenda]['chunk_indices'].append(idx)
+
+    # agenda_mapping에서 attachments, status, agenda_type 매칭
+    if agenda_mapping:
+        for mapping in agenda_mapping:
+            agenda_title = mapping.get('agenda_title')
+            attachments = mapping.get('attachments', [])
+            status = mapping.get('status', '접수')
+            agenda_type = mapping.get('agenda_type', 'other')
+
+            if agenda_title in agenda_groups:
+                agenda_groups[agenda_title]['attachments'] = attachments
+                agenda_groups[agenda_title]['status'] = status
+                agenda_groups[agenda_title]['agenda_type'] = agenda_type
 
     return agenda_groups
 
@@ -111,10 +138,11 @@ def insert_agendas_to_db(conn):
 
         meeting_info = data.get('meeting_info', {})
         chunks = data.get('chunks', [])
+        agenda_mapping = data.get('agenda_mapping', [])  # ⭐ 추가: 첨부 문서 정보
         meeting_id = json_file.stem
 
-        # 안건별로 그룹핑
-        agenda_groups = group_chunks_by_agenda(chunks)
+        # 안건별로 그룹핑 (attachments 포함)
+        agenda_groups = group_chunks_by_agenda(chunks, agenda_mapping)
 
         print(f"   안건 수: {len(agenda_groups)}개")
 
@@ -142,26 +170,37 @@ def insert_agendas_to_db(conn):
                 for idx in agenda_data['chunk_indices']
             ])
 
+            # attachments 추출 (agenda_mapping에서 가져오기)
+            attachments_json = None
+            if 'attachments' in agenda_data and agenda_data['attachments']:
+                attachments_json = json.dumps(agenda_data['attachments'], ensure_ascii=False)
+
+            # status와 agenda_type 추출 (agenda_mapping에서 가져오기)
+            status = agenda_data.get('status', '접수')
+            agenda_type = agenda_data.get('agenda_type', 'other')
+
             # 안건 테이블에 삽입 (요약 없이 먼저 저장)
             cursor.execute('''
                 INSERT INTO agendas (
                     agenda_id, agenda_title, meeting_title, meeting_date, meeting_url,
                     main_speaker, all_speakers, speaker_count, chunk_count,
-                    chunk_ids, combined_text, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    chunk_ids, combined_text, attachments, agenda_type, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 agenda_id,
                 agenda,
                 meeting_info.get('title', ''),
                 meeting_info.get('date', ''),
-                meeting_info.get('url', ''),
+                meeting_info.get('meeting_url', ''),  # ✨ url → meeting_url
                 main_speaker,
                 ', '.join(unique_speakers),
                 len(unique_speakers),
                 len(agenda_data['texts']),
                 chunk_ids,
                 combined_text,
-                '심사중'  # 기본 상태
+                attachments_json,
+                agenda_type,  # agenda_mapping에서 추출된 타입
+                status  # agenda_mapping에서 추출된 상태
             ))
 
             print(f"   ✓ [{agenda_index + 1}] {agenda[:50]}... "
@@ -174,14 +213,14 @@ def insert_agendas_to_db(conn):
 
                 cursor.execute('''
                     INSERT INTO agenda_chunks (
-                        chunk_id, agenda_id, chunk_index, speaker, text_preview
+                        chunk_id, agenda_id, chunk_index, speaker, full_text
                     ) VALUES (?, ?, ?, ?, ?)
                 ''', (
                     chunk_id,
                     agenda_id,
                     chunk_idx,
                     chunk.get('speaker', ''),
-                    chunk['text'][:200]  # 앞 200자만
+                    chunk['text']  # 전체 텍스트 저장
                 ))
 
             total_agendas += 1
